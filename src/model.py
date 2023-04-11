@@ -456,7 +456,7 @@ def cluster_embeddings(x):
     return x
 
 '''create the yoco training model'''
-def create_model(input_shape, anchors, num_classes, weights_path=None, inference_only=False):
+def create_model(model_type, batch_size, input_shape, anchors, num_classes, weights_path=None, inference_only=False):
     ''' Setup '''
     yolo_input = Input(shape=(416, 416, 3), name='YOLO Input')
     domain_input = Input(shape=(416, 416, 3), name='Domain Input')
@@ -464,7 +464,7 @@ def create_model(input_shape, anchors, num_classes, weights_path=None, inference
     h, w = input_shape
     num_anchors = len(anchors)
     
-    print('\nCreating YOLOv3 model with {} anchors and {} classes...'.format(num_anchors, num_classes))
+    print(f'\nCreating {model_type} model with {num_anchors} anchors and {num_classes} classes...')
 
     y_true = [Input(shape=(h//{0:32, 1:16, 2:8}[l], w//{0:32, 1:16, 2:8}[l], \
         num_anchors//3, num_classes+5)) for l in range(3)]
@@ -516,7 +516,7 @@ def create_model(input_shape, anchors, num_classes, weights_path=None, inference
     y1_mean, y2_mean, y3_mean = Lambda(cluster_embeddings)([y1d,y2d,y3d, tf.constant(num_classes+1)])
     
     ''' Instance Discriminators '''
-    y1_mean_input = Input(shape=(16,13,13,num_classes+1))
+    y1_mean_input = Input(shape=(batch_size,13,13,num_classes+1))
     x = GradientReversal()(y1_mean_input)
     x = Conv2D(64, (5, 5), strides=(2, 2), padding='same')(x)
     x = LeakyReLU()(x)
@@ -529,7 +529,7 @@ def create_model(input_shape, anchors, num_classes, weights_path=None, inference
     instDisc1 = Model(y1_mean_input, x, name='inst1')
     instDisc1_out = instDisc1(y1_mean)
     
-    y2_mean_input = Input(shape=(16,26,26,num_classes+1))
+    y2_mean_input = Input(shape=(batch_size,26,26,num_classes+1))
     x = GradientReversal()(y2_mean_input)
     x = Conv2D(64, (5, 5), strides=(2, 2), padding='same')(x)
     x = LeakyReLU()(x)
@@ -542,7 +542,7 @@ def create_model(input_shape, anchors, num_classes, weights_path=None, inference
     instDisc2 = Model(y2_mean_input, x, name='inst2')
     instDisc2_out = instDisc2(y2_mean)
     
-    y3_mean_input = Input(shape=(16,52,52,num_classes+1))
+    y3_mean_input = Input(shape=(batch_size,52,52,num_classes+1))
     x = GradientReversal()(y3_mean_input)
     x = Conv2D(64, (5, 5), strides=(2, 2), padding='same')(x)
     x = LeakyReLU()(x)
@@ -562,6 +562,7 @@ def create_model(input_shape, anchors, num_classes, weights_path=None, inference
     yolo_detection_model = Model([yolo_input, *y_true], yolo_detection_loss)    
 
     ''' Return YOCO '''
-    complete_model = Model([yolo_detection_model.input, domain_input], [yolo_detection_model.output, imgDisc.output, instDisc1_out, instDisc2_out, instDisc3_out])
+    yoco_model = Model([yolo_detection_model.input, domain_input], [yolo_detection_model.output, imgDisc.output, instDisc1_out, instDisc2_out, instDisc3_out])
         
-    return complete_model
+    return yoco_model if model_type == 'yoco' else yolo_detection_model
+    # return complete_model

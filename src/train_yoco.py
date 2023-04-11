@@ -1,10 +1,10 @@
 """
-Retrain the YOLO model for your own dataset.
+Retrain the YOCO model for your own dataset.
 """
 
 ''' Only use a certain GPU number '''
-# import os
-# os.environ["CUDA_VISIBLE_DEVICES"]="0"
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 import tensorflow as tf
 import numpy as np
@@ -20,22 +20,40 @@ print(physical_devices)
 
 
 def main():
-    model_name = 'YOCOv0.1-sim10k'
+    model_name = 'YOCOv0-blendBennu'
+    log_dir = '/mnt/fastdata0/tbchase/training_logs/' + model_name  + '/'
     
     # Training data/variable setup
-    box_anno_path = "../model_data/annotations/box_anno_sim10k.txt"
-    dom_anno_path = "../model_data/annotations/dom_anno_sim10k_cityscape.txt"
-    classes_path = '../model_data/class_lists/sim10k_classes.txt'
-    log_dir = '../logs/' + model_name  + '/'
-    
-    anchors_path = '../model_data/anchors/yolo_anchors.txt'
+    box_anno_path = "../model_data/annotations/box_blendBennu.txt"
+    dom_anno_path = "../model_data/annotations/dom_blendBennu_orexTAG.txt"
+    classes_path  = '../model_data/class_lists/blendBennu_classes.txt' 
+    anchors_path  = '../model_data/anchors/yolo_anchors.txt'
     class_names = get_classes(classes_path)
     num_classes = len(class_names)
     anchors = get_anchors(anchors_path)
     input_shape = (416,416) # multiple of 32, hw
 
+    # Training/loss parameters
+    batch_size  = 32
+    start_epoch = 0
+    # ----------------
+    stage1_epochs = 25
+    stage2_epochs = 25
+    stage1_lr = 1e-3
+    stage2_lr = 1e-4
+    # ---------------- AAS Paper Settings
+    #img_weight = 0.5
+    #inst1_weight = 0.1666
+    #inst2_weight = 0.1666
+    #inst3_weight = 0.1666
+    # ----------------
+    img_weight = 1
+    inst1_weight = 1
+    inst2_weight = 1
+    inst3_weight = 1
+
     # Create YOCO model
-    model = create_model(input_shape, anchors, num_classes,
+    model = create_model('yoco', batch_size, input_shape, anchors, num_classes,
         weights_path='../model_data/saved_weights/yolo.h5') # make sure you know what you freeze
     model.summary()
 
@@ -63,20 +81,6 @@ def main():
     num_dom_val = int(len(dom_lines)*val_split)
     num_dom_train = len(dom_lines) - num_dom_val
 
-    # Training/loss parameters
-    batch_size  = 16
-    start_epoch = 0
-    # ----------------
-    stage1_epochs = 1
-    stage2_epochs = 2
-    stage1_lr = 1e-3
-    stage2_lr = 1e-4
-    # ----------------
-    img_weight = 1
-    inst1_weight = 1
-    inst2_weight = 1
-    inst3_weight = 1
-    
     print('\nYOLO Detection training on {} samples, val on {} samples'.format(num_box_train, num_box_val))
     print('Image/Instance Discriminators training on {} samples, val on {} samples\n'.format(num_dom_train, num_dom_val))
     print("--- TRAINING PARAMETERS ---")
