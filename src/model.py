@@ -427,19 +427,19 @@ class GradientReversal(tf.keras.layers.Layer):
     based on https://github.com/michetonu/gradient_reversal_keras_tf
     ported to tf 2.x
     """
-    def __init__(self, λ=1, **kwargs):
+    def __init__(self, lam=1, **kwargs):
         super(GradientReversal, self).__init__(**kwargs)
-        self.λ = λ
+        self.lam = lam
 
     @staticmethod
     @tf.custom_gradient
-    def reverse_gradient(x, λ):
+    def reverse_gradient(x, lam):
         # @tf.custom_gradient suggested by Hoa's comment at
         # https://stackoverflow.com/questions/60234725/how-to-use-gradient-override-map-with-tf-gradienttape-in-tf2-0
         return tf.identity(x), lambda dy: (-dy, None)
 
     def call(self, x):
-        return self.reverse_gradient(x, self.λ)
+        return self.reverse_gradient(x, self.lam)
 
     def compute_mask(self, inputs, mask=None):
         return mask
@@ -448,7 +448,9 @@ class GradientReversal(tf.keras.layers.Layer):
         return input_shape
 
     def get_config(self):
-        return super(GradientReversal, self).get_config() | {'λ': self.λ}
+        config = super(GradientReversal, self).get_config()
+        config.update({'lam': self.lam})
+        return config
 
 # Perform embedding clustering, output num_classes (3) number of mean embeddings per scale
 def cluster_embeddings(x):
@@ -456,10 +458,15 @@ def cluster_embeddings(x):
     return x
 
 '''create the yoco training model'''
-def create_model(model_type, batch_size, input_shape, anchors, num_classes, weights_path=None, inference_only=False):
+def create_model(model_type, batch_size, input_shape, anchors, num_classes, weights_path=None, freeze_body=2):
+    ''' Arg Checks '''
+    if model_type not in ['yolo', 'yoco', 'inf']:
+        print("\n\nERROR (create_model): <model_type> must be one of [yolo, yoco, inf]\n")
+        exit(-1)
+    
     ''' Setup '''
-    yolo_input = Input(shape=(416, 416, 3), name='YOLO Input')
-    domain_input = Input(shape=(416, 416, 3), name='Domain Input')
+    yolo_input = Input(shape=(416, 416, 3), name='yolo_input')
+    domain_input = Input(shape=(416, 416, 3), name='domain_input')
 
     h, w = input_shape
     num_anchors = len(anchors)
@@ -470,7 +477,7 @@ def create_model(model_type, batch_size, input_shape, anchors, num_classes, weig
         num_anchors//3, num_classes+5)) for l in range(3)]
     
     ''' Darknet '''
-    darknet = Model(yolo_input, darknet_body(yolo_input), name='DarkNet_Model')
+    darknet = Model(yolo_input, darknet_body(yolo_input), name='darknet_model')
         
     ''' YOLO Body '''
     x1, y1 = make_last_layers(darknet(yolo_input), 512, num_anchors//3*(num_classes+5))
@@ -484,19 +491,18 @@ def create_model(model_type, batch_size, input_shape, anchors, num_classes, weig
             UpSampling2D(2))(x2)
     x = Concatenate()([x,darknet.layers[92].output])
     x3, y3 = make_last_layers(x, 128, num_anchors//3*(num_classes+5))
-    yolo_model = Model(yolo_input, [y1,y2,y3], name='YOLO_Model')
+    yolo_model = Model(yolo_input, [y1,y2,y3], name='yolo_model')
     
-    freeze_body = 2
     if weights_path:
         yolo_model.load_weights(weights_path, by_name=True, skip_mismatch=True)
-        print('Load weights {}.'.format(weights_path))
+        print('Loaded weights {}.'.format(weights_path))
         if freeze_body in [1, 2]:
             # Freeze darknet53 body or freeze all but 3 output layers.
             num = (185, len(yolo_model.layers)-3)[freeze_body-1]
             for i in range(num): yolo_model.layers[i].trainable = False
             print('Freeze the first {} layers of total {} layers.'.format(num, len(yolo_model.layers)))
     
-    if inference_only:
+    if model_type == 'inf':
         return yolo_model
     
     ''' Image Discriminator '''
@@ -509,7 +515,7 @@ def create_model(model_type, batch_size, input_shape, anchors, num_classes, weig
     x = Dropout(0.3)(x)
     x = Flatten()(x)
     x = Dense(1, name='img')(x)
-    imgDisc = Model(domain_input, x, name='imgDis_Model')
+    imgDisc = Model(domain_input, x, name='imgdis_model')
 
     ''' Visual Similarity Clustering '''
     y1d, y2d, y3d = yolo_model(domain_input)
@@ -565,4 +571,3 @@ def create_model(model_type, batch_size, input_shape, anchors, num_classes, weig
     yoco_model = Model([yolo_detection_model.input, domain_input], [yolo_detection_model.output, imgDisc.output, instDisc1_out, instDisc2_out, instDisc3_out])
         
     return yoco_model if model_type == 'yoco' else yolo_detection_model
-    # return complete_model

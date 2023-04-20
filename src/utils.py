@@ -196,3 +196,15 @@ def get_random_domain_data(annotation_line, input_shape, random=True, max_boxes=
     image_data = hsv_to_rgb(x) # numpy array, 0 to 1
 
     return image_data, domain
+
+from keras import models
+def freeze(model):
+    """Freeze model weights in every layer."""
+    for layer in model.layers:
+        layer.trainable = True
+        if isinstance(layer, models.Model):
+            freeze(layer)
+  
+def save_model(model, path):
+    freeze(model)
+    model.save_weights(path)
