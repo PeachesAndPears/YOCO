@@ -104,3 +104,5 @@ ENV/
 *.mp4
 model_data/saved_weights/*
 *logs*/*
+
+val/*
